@@ -1,0 +1,65 @@
+---
+- name: Setup Controller 
+  hosts: localhost
+  gather_facts: false
+  tasks: 
+    - fail:
+        msg: "You need to create host and host_ip variables"
+      when: (host is not defined) and (host_ip is not defined)
+
+    - name: Setup hostfile
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ host_ip }} {{ host }}"
+          
+
+    - name: Setup inventory
+      lineinfile:
+        path: inventory/inventory
+        line: "{{ host }}"
+
+- name: Setup Host
+  hosts: "{{ host }}"
+  gather_facts: false
+  remote_user: root
+  vars_files: 
+    - registration.yml
+    - registries.yml
+  become: false
+  tasks:
+    - name: Create ansible user add them to wheel
+      user:
+        name: ansible
+        groups: wheel
+        append: true
+        create_home: true
+        generate_ssh_key: true
+        ssh_key_bits: 2048
+        ssh_key_file: .ssh/id_rsa
+        
+    - name: Add public key to authorized keys
+      copy:
+        src: .ssh/id_rsa.pub
+        dest: .ssh/authorized_keys
+
+    - name: Setup wheel to require no password
+      lineinfile:
+        path: /etc/sudoers
+        regexp: ^%wheel
+        line: "%wheel ALL=(ALL) NOPASSWD: ALL"
+        validate: /usr/sbin/visudo -cf %s 
+
+    - name: Change ansible password
+      shell: 'echo "your_password_here" | passwd --stdin ansible'
+
+    - name: Setup Redhat Subscription with vault
+      redhat_subscription:
+        username: "{{ username }}"
+        password: "{{ password }}"
+
+    - name: Setup subscritpions
+      rhsm_repository:
+        name:
+          - "{{ item }}"
+        state: enabled
+      loop: "{{ names }}" 
